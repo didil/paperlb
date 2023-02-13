@@ -1,0 +1,59 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - lb.paperlb.com
+  resources:
+  - loadbalancers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - lb.paperlb.com
+  resources:
+  - loadbalancers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - lb.paperlb.com
+  resources:
+  - loadbalancers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - v1
+  resources:
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - v1
+  resources:
+  - services/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - v1
+  resources:
+  - services/status
+  verbs:
+  - get
+  - patch
+  - update
