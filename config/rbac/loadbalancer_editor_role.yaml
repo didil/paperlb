@@ -1,0 +1,31 @@
+# permissions for end users to edit loadbalancers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: loadbalancer-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: paperlb
+    app.kubernetes.io/part-of: paperlb
+    app.kubernetes.io/managed-by: kustomize
+  name: loadbalancer-editor-role
+rules:
+- apiGroups:
+  - lb.paperlb.com
+  resources:
+  - loadbalancers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - lb.paperlb.com
+  resources:
+  - loadbalancers/status
+  verbs:
+  - get

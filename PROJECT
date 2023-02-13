@@ -7,4 +7,14 @@ layout:
 - go.kubebuilder.io/v3
 projectName: paperlb
 repo: github.com/didil/paperlb
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paperlb.com
+  group: lb
+  kind: LoadBalancer
+  path: github.com/didil/paperlb/api/v1alpha1
+  version: v1alpha1
 version: "3"
