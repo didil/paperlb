@@ -19,9 +19,8 @@ package controllers
 import (
 	"context"
 	"strconv"
-	"time"
 
-	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,8 +28,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	lbv1alpha1 "github.com/didil/paperlb/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 )
 
 // ServiceReconciler reconciles a Service object
@@ -42,16 +44,9 @@ type ServiceReconciler struct {
 //+kubebuilder:rbac:groups=v1,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=v1,resources=services/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=v1,resources=services/finalizers,verbs=update
+//+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancers,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancers/status,verbs=get;update;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Service object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger = logger.WithValues("service", req.NamespacedName)
@@ -72,79 +67,152 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	logger.Info("Reconciling service", "type", svc.Spec.Type)
-	time.Sleep(5 * time.Second)
-
 	loadBalancerClass := svc.Spec.LoadBalancerClass
 	if loadBalancerClass != nil && *loadBalancerClass != paperLBloadBalancerClass {
 		// load balancer class is set and not ours
 		return ctrl.Result{}, nil
 	}
 
-	portStatus := corev1.PortStatus{}
+	logger.Info("Reconciling service", "type", svc.Spec.Type)
 
-	loadBalancerIP := svc.Annotations[loadBalancerIPKey]
-	if loadBalancerIP == "" {
-		// no ip set
-		return ctrl.Result{}, nil
-	}
+	// Check if the object already exists, if not create a new one
+	lb := &lbv1alpha1.LoadBalancer{}
+	err = r.Get(ctx, types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, lb)
+	if err != nil && errors.IsNotFound(err) {
+		httpUpdaterURL := svc.Annotations[loadBalancerHttpUpdaterURLKey]
+		if httpUpdaterURL == "" {
+			// no http updater url set
+			logger.Info("No http updater url set for PaperLB load balancer")
+			return ctrl.Result{}, nil
+		}
 
-	loadBalancerPort := svc.Annotations[loadBalancerPortKey]
-	if loadBalancerPort == "" {
-		// no port set
-		logger.Info("No Port Set for PaperLB load balancer")
-		return ctrl.Result{}, nil
-	}
+		loadBalancerHost := svc.Annotations[loadBalancerHostKey]
+		if loadBalancerHost == "" {
+			// no host set
+			logger.Info("No Host Set for PaperLB load balancer")
+			return ctrl.Result{}, nil
+		}
 
-	loadBalancerPortInt, err := strconv.ParseUint(loadBalancerPort, 10, 16)
-	if err != nil {
-		// port invalid
-		logger.Info("Invalid Port Set for PaperLB load balancer", "loadBalancerPort", loadBalancerPort)
-		return ctrl.Result{}, nil
-	}
+		loadBalancerPort := svc.Annotations[loadBalancerPortKey]
+		if loadBalancerPort == "" {
+			// no port set
+			logger.Info("No Port Set for PaperLB load balancer")
+			return ctrl.Result{}, nil
+		}
 
-	portStatus.Port = int32(loadBalancerPortInt)
+		loadBalancerPortInt, err := strconv.ParseUint(loadBalancerPort, 10, 16)
+		if err != nil {
+			// port invalid
+			logger.Info("Invalid Port Set for PaperLB load balancer", "loadBalancerPort", loadBalancerPort)
+			return ctrl.Result{}, nil
+		}
 
-	loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
-	switch corev1.Protocol(loadBalancerProtocol) {
-	case corev1.ProtocolTCP:
-		portStatus.Protocol = corev1.ProtocolTCP
-	case corev1.ProtocolUDP:
-		portStatus.Protocol = corev1.ProtocolUDP
-	default:
-		portStatus.Protocol = corev1.ProtocolTCP
-	}
+		loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
+		// TCP, UDP or blank (defaults to TCP) are allowed
+		if loadBalancerProtocol != string(corev1.ProtocolTCP) && loadBalancerProtocol != string(corev1.ProtocolUDP) && loadBalancerProtocol != "" {
+			// protocol invalid
+			logger.Info("Invalid Protocol Set for PaperLB load balancer", "loadBalancerProtocol", loadBalancerProtocol)
+			return ctrl.Result{}, nil
+		}
 
-	ports := []corev1.PortStatus{portStatus}
+		if len(svc.Spec.Ports) == 0 {
+			// no ports set
+			logger.Info("no ports set on service")
+			return ctrl.Result{}, nil
+		}
 
-	targetIngresses := []corev1.LoadBalancerIngress{
-		{
-			IP:    loadBalancerIP,
-			Ports: ports,
-		},
-	}
+		portsData := svc.Spec.Ports[0]
 
-	ingresses := svc.Status.LoadBalancer.Ingress
+		nodePort := portsData.NodePort
+		if nodePort == 0 {
+			// nodeport not set
+			logger.Info("nodeport not set on service")
+			return ctrl.Result{}, nil
+		}
 
-	if equality.Semantic.DeepEqual(targetIngresses, ingresses) {
-		// nothing to do
-		return ctrl.Result{}, nil
-	}
+		// get nodes
+		nodes := &v1.NodeList{}
+		err = r.List(ctx, nodes)
+		if err != nil {
+			logger.Error(err, "Failed to get nodes")
+			return ctrl.Result{}, err
+		}
 
-	svc.Status.LoadBalancer.Ingress = targetIngresses
+		targets := []lbv1alpha1.Target{}
+		for _, node := range nodes.Items {
+			host := r.findExternalIP(&node)
+			if host == "" {
+				logger.Error(err, "Failed to get external ip for node", "node", node.Name)
+				return ctrl.Result{}, err
+			}
+			targets = append(targets, lbv1alpha1.Target{Host: host, Port: int(nodePort)})
+		}
 
-	logger.Info("Adding Load Balancer IP to service", "ip", loadBalancerIP)
+		// Define new load balancer
+		lb, err := r.loadBalancerForService(svc, httpUpdaterURL, loadBalancerHost, int(loadBalancerPortInt), loadBalancerProtocol, targets)
+		if err != nil {
+			logger.Error(err, "Failed to build new load balancer", "LoadBalancer.Name", svc.Name)
+			return ctrl.Result{}, err
+		}
 
-	err = r.Status().Update(ctx, svc)
-	if err != nil {
-		logger.Error(err, "Failed to update service with load balancer ip", "error", err)
+		logger.Info("Creating a new Load Balancer", "LoadBalancer.Name", lb.Name)
+		err = r.Create(ctx, lb)
+		if err != nil {
+			logger.Error(err, "Failed to create new Load Balancer", "LoadBalancer.Name", lb.Name)
+			return ctrl.Result{}, err
+		}
+
+		r.Status().Update(ctx, lb)
+
+		// created successfully - return and requeue
+		return ctrl.Result{Requeue: true}, nil
+	} else if err != nil {
+		logger.Error(err, "Failed to get Load Balancer")
 		return ctrl.Result{}, err
 	}
+
+	//TODO: check spec diff and update
 
 	return ctrl.Result{}, nil
 }
 
-const loadBalancerIPKey = "lb.paperlb.com/load-balancer-ip"
+func (r *ServiceReconciler) findExternalIP(node *v1.Node) string {
+	addrs := node.Status.Addresses
+	for _, addr := range addrs {
+		if addr.Type == v1.NodeExternalIP {
+			return addr.Address
+		}
+	}
+	return ""
+}
+
+func (r *ServiceReconciler) loadBalancerForService(svc *corev1.Service, httpUpdaterURL string, loadBalancerHost string, loadBalancerPortInt int, loadBalancerProtocol string, targets []lbv1alpha1.Target) (*lbv1alpha1.LoadBalancer, error) {
+	lb := &lbv1alpha1.LoadBalancer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      svc.Name,
+			Namespace: svc.Namespace,
+		},
+		Spec: lbv1alpha1.LoadBalancerSpec{
+			HTTPUpdater: lbv1alpha1.HTTPUpdater{
+				URL: httpUpdaterURL,
+			},
+			Host:     loadBalancerHost,
+			Port:     loadBalancerPortInt,
+			Protocol: loadBalancerProtocol,
+			Targets:  targets,
+		},
+	}
+	// Set Service instance as the owner and controller
+	err := ctrl.SetControllerReference(svc, lb, r.Scheme)
+	if err != nil {
+		return nil, err
+	}
+
+	return lb, nil
+}
+
+const loadBalancerHttpUpdaterURLKey = "lb.paperlb.com/http-updater-url"
+const loadBalancerHostKey = "lb.paperlb.com/load-balancer-host"
 const loadBalancerPortKey = "lb.paperlb.com/load-balancer-port"
 const loadBalancerProtocolKey = "lb.paperlb.com/load-balancer-protocol"
 

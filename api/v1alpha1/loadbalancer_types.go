@@ -25,24 +25,60 @@ import (
 
 // LoadBalancerSpec defines the desired state of LoadBalancer
 type LoadBalancerSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of LoadBalancer. Edit loadbalancer_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// HTTPUpdater is the http updater
+	// +kubebuilder:validation:Required
+	HTTPUpdater HTTPUpdater `json:"httpUpdater,omitempty"`
+	// Host is the lb host
+	// +kubebuilder:validation:Required
+	Host string `json:"host,omitempty"`
+	// Port is the lb host
+	// +kubebuilder:validation:Required
+	Port int `json:"port,omitempty"`
+	// Protocol is the lb protocol
+	// +kubebuilder:validation:Required
+	Protocol string `json:"protocol,omitempty"`
+	// Targets is the list of targets
+	Targets []Target `json:"targets,omitempty"`
 }
+
+type Target struct {
+	// Host is the target host
+	// +kubebuilder:validation:Required
+	Host string `json:"host,omitempty"`
+	// Port is the target port
+	// +kubebuilder:validation:Required
+	Port int `json:"port,omitempty"`
+}
+
+type LoadBalancerPhase string
+
+const (
+	// LoadBalancerPhase pending
+	LoadBalancerPhasePending LoadBalancerPhase = "PENDING"
+	// LoadBalancerPhase ready
+	LoadBalancerPhaseReady LoadBalancerPhase = "READY"
+)
 
 // LoadBalancerStatus defines the observed state of LoadBalancer
 type LoadBalancerStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// CreatedAt is the cloud storage bucket creation time
-	UpdatedAt string `json:"createdAt,omitempty"`
+	// +kubebuilder:validation:Enum=PENDING;READY
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=PENDING
+	Phase LoadBalancerPhase `json:"phase,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
+// HTTPUpdater is the http updated for the load balancer
+type HTTPUpdater struct {
+	// URL to request lb updates
+	URL string `json:"url,omitempty"`
+}
 
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.host`
+// +kubebuilder:printcolumn:name="Port",type=string,JSONPath=`.spec.port`
+// +kubebuilder:printcolumn:name="Protocol",type=string,JSONPath=`.spec.protocol`
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.phase`
 // LoadBalancer is the Schema for the loadbalancers API
 type LoadBalancer struct {
 	metav1.TypeMeta   `json:",inline"`

@@ -25,12 +25,13 @@ type UpstreamServer struct {
 }
 
 type UpdateParams struct {
-	BackendName                string           `json:"backendName"`
-	LBPort                     int              `json:"lbPort"`
-	LBProtocol                 string           `json:"lbProtocol"`
-	UpstreamServers            []UpstreamServer `json:"upstreamServers"`
-	ProxyTimeoutSeconds        int              `json:"proxyTimeoutSeconds"`
-	ProxyConnectTimeoutSeconds int              `json:"proxyConnectTimeoutSeconds"`
+	BackendName     string           `json:"backendName"`
+	LBPort          int              `json:"lbPort"`
+	LBProtocol      string           `json:"lbProtocol"`
+	UpstreamServers []UpstreamServer `json:"upstreamServers"`
+	// fields below are not implemented in CRD yet
+	ProxyTimeoutSeconds        int `json:"proxyTimeoutSeconds"`
+	ProxyConnectTimeoutSeconds int `json:"proxyConnectTimeoutSeconds"`
 }
 
 type DeleteParams struct {

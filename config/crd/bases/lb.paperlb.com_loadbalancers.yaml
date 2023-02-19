@@ -15,7 +15,20 @@ spec:
     singular: loadbalancer
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.host
+      name: Host
+      type: string
+    - jsonPath: .spec.port
+      name: Port
+      type: string
+    - jsonPath: .spec.protocol
+      name: Protocol
+      type: string
+    - jsonPath: .status.phase
+      name: Status
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: LoadBalancer is the Schema for the loadbalancers API
@@ -35,18 +48,43 @@ spec:
           spec:
             description: LoadBalancerSpec defines the desired state of LoadBalancer
             properties:
-              foo:
-                description: Foo is an example field of LoadBalancer. Edit loadbalancer_types.go
-                  to remove/update
+              host:
+                description: Host is the lb host
                 type: string
+              httpUpdater:
+                description: HTTPUpdater is the http updater
+                properties:
+                  url:
+                    description: URL to request lb updates
+                    type: string
+                type: object
+              port:
+                description: Port is the lb host
+                type: integer
+              protocol:
+                description: Protocol is the lb protocol
+                type: string
+              targets:
+                description: Targets is the list of targets
+                items:
+                  properties:
+                    host:
+                      description: Host is the target host
+                      type: string
+                    port:
+                      description: Port is the target port
+                      type: integer
+                  type: object
+                type: array
             type: object
           status:
             description: LoadBalancerStatus defines the observed state of LoadBalancer
             properties:
-              createdAt:
-                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
-                  of cluster Important: Run "make" to regenerate code after modifying
-                  this file CreatedAt is the cloud storage bucket creation time'
+              phase:
+                default: PENDING
+                enum:
+                - PENDING
+                - READY
                 type: string
             type: object
         type: object
