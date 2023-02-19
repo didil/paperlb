@@ -42,6 +42,12 @@ spec:
             type: object
           status:
             description: LoadBalancerStatus defines the observed state of LoadBalancer
+            properties:
+              createdAt:
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file CreatedAt is the cloud storage bucket creation time'
+                type: string
             type: object
         type: object
     served: true

@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -80,17 +81,50 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	portStatus := corev1.PortStatus{}
+
 	loadBalancerIP := svc.Annotations[loadBalancerIPKey]
 	if loadBalancerIP == "" {
 		// no ip set
 		return ctrl.Result{}, nil
 	}
 
-	ingresses := svc.Status.LoadBalancer.Ingress
+	loadBalancerPort := svc.Annotations[loadBalancerPortKey]
+	if loadBalancerPort == "" {
+		// no port set
+		logger.Info("No Port Set for PaperLB load balancer")
+		return ctrl.Result{}, nil
+	}
+
+	loadBalancerPortInt, err := strconv.ParseUint(loadBalancerPort, 10, 16)
+	if err != nil {
+		// port invalid
+		logger.Info("Invalid Port Set for PaperLB load balancer", "loadBalancerPort", loadBalancerPort)
+		return ctrl.Result{}, nil
+	}
+
+	portStatus.Port = int32(loadBalancerPortInt)
+
+	loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
+	switch corev1.Protocol(loadBalancerProtocol) {
+	case corev1.ProtocolTCP:
+		portStatus.Protocol = corev1.ProtocolTCP
+	case corev1.ProtocolUDP:
+		portStatus.Protocol = corev1.ProtocolUDP
+	default:
+		portStatus.Protocol = corev1.ProtocolTCP
+	}
+
+	ports := []corev1.PortStatus{portStatus}
 
 	targetIngresses := []corev1.LoadBalancerIngress{
-		{IP: loadBalancerIP},
+		{
+			IP:    loadBalancerIP,
+			Ports: ports,
+		},
 	}
+
+	ingresses := svc.Status.LoadBalancer.Ingress
 
 	if equality.Semantic.DeepEqual(targetIngresses, ingresses) {
 		// nothing to do
@@ -111,6 +145,9 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 const loadBalancerIPKey = "lb.paperlb.com/load-balancer-ip"
+const loadBalancerPortKey = "lb.paperlb.com/load-balancer-port"
+const loadBalancerProtocolKey = "lb.paperlb.com/load-balancer-protocol"
+
 const paperLBloadBalancerClass = "lb.paperlb.com/paperlb-class"
 
 func (r *ServiceReconciler) serviceFor(ctx context.Context, name types.NamespacedName) (*corev1.Service, error) {

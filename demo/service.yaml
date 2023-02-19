@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: k8s-pod-info-api
+  name: k8s-pod-info-api-service
+  annotations:
+    lb.paperlb.com/load-balancer-ip: "192.168.64.1"
+    lb.paperlb.com/load-balancer-port: "8080"
+    lb.paperlb.com/load-balancer-protocol: "TCP"
+spec:
+  ports:
+  - port: 3000
+    protocol: TCP
+    targetPort: 3000
+  selector:
+    app: k8s-pod-info-api
+  type: LoadBalancer

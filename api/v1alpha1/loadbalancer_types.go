@@ -36,6 +36,8 @@ type LoadBalancerSpec struct {
 type LoadBalancerStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	// CreatedAt is the cloud storage bucket creation time
+	UpdatedAt string `json:"createdAt,omitempty"`
 }
 
 //+kubebuilder:object:root=true
