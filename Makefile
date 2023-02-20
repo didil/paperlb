@@ -155,3 +155,11 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+.PHONY: install-tools
+install-tools:
+	@cat tools/tools.go | grep _ | awk -F'"' '{print $$2}' | GOBIN=$(LOCALBIN) xargs -tI % go install %
+
+.PHONY: gen-mocks
+gen-mocks: install-tools
+	mocks/gen_mocks.sh

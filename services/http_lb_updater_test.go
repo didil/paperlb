@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -41,7 +42,7 @@ func TestHTTPLBUpdaterUpdate(t *testing.T) {
 		w.Write([]byte(`{}`))
 	}))
 
-	err := u.Update(s.URL, params)
+	err := u.Update(context.Background(), s.URL, params)
 	assert.NoError(t, err)
 }
 
@@ -63,6 +64,6 @@ func TestHTTPLBUpdaterDelete(t *testing.T) {
 		w.Write([]byte(`{}`))
 	}))
 
-	err := u.Delete(s.URL, params)
+	err := u.Delete(context.Background(), s.URL, params)
 	assert.NoError(t, err)
 }

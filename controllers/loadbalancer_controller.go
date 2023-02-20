@@ -25,12 +25,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	lbv1alpha1 "github.com/didil/paperlb/api/v1alpha1"
+	"github.com/didil/paperlb/services"
 )
 
 // LoadBalancerReconciler reconciles a LoadBalancer object
 type LoadBalancerReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme              *runtime.Scheme
+	HTTPLBUpdaterClient services.HTTPLBUpdaterClient
 }
 
 //+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancers,verbs=get;list;watch;create;update;patch;delete

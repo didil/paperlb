@@ -25,6 +25,9 @@ spec:
     - jsonPath: .spec.protocol
       name: Protocol
       type: string
+    - jsonPath: .status.targetCount
+      name: TargetCount
+      type: string
     - jsonPath: .status.phase
       name: Status
       type: string
@@ -86,6 +89,9 @@ spec:
                 - PENDING
                 - READY
                 type: string
+              targetCount:
+                description: TargetCount is the number of targets
+                type: integer
             type: object
         type: object
     served: true

@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 
 	"net/http"
@@ -11,8 +12,8 @@ import (
 )
 
 type HTTPLBUpdaterClient interface {
-	Update(url string, params *UpdateParams) error
-	Delete(url string, params *DeleteParams) error
+	Update(ctx context.Context, url string, params *UpdateParams) error
+	Delete(ctx context.Context, url string, params *DeleteParams) error
 }
 
 type httpLBUpdaterClient struct {
@@ -56,7 +57,7 @@ func NewHTTPLBUpdaterClient() HTTPLBUpdaterClient {
 	return cl
 }
 
-func (cl *httpLBUpdaterClient) Update(url string, params *UpdateParams) error {
+func (cl *httpLBUpdaterClient) Update(ctx context.Context, url string, params *UpdateParams) error {
 	var buf bytes.Buffer
 
 	err := json.NewEncoder(&buf).Encode(params)
@@ -64,7 +65,7 @@ func (cl *httpLBUpdaterClient) Update(url string, params *UpdateParams) error {
 		return errors.Wrapf(err, "failed to encode update request")
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create update request")
 	}
@@ -89,7 +90,7 @@ func (cl *httpLBUpdaterClient) Update(url string, params *UpdateParams) error {
 	return errors.New(jsonErr.Err)
 }
 
-func (cl *httpLBUpdaterClient) Delete(url string, params *DeleteParams) error {
+func (cl *httpLBUpdaterClient) Delete(ctx context.Context, url string, params *DeleteParams) error {
 	var buf bytes.Buffer
 
 	err := json.NewEncoder(&buf).Encode(params)
@@ -97,7 +98,7 @@ func (cl *httpLBUpdaterClient) Delete(url string, params *DeleteParams) error {
 		return errors.Wrapf(err, "failed to encode delete request")
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, url, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, &buf)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create delete request")
 	}

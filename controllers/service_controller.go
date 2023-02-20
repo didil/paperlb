@@ -20,6 +20,7 @@ import (
 	"context"
 	"strconv"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -73,96 +74,101 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	logger.Info("Reconciling service", "type", svc.Spec.Type)
+	httpUpdaterURL := svc.Annotations[loadBalancerHttpUpdaterURLKey]
+	if httpUpdaterURL == "" {
+		// no http updater url set
+		logger.Info("No http updater url set for PaperLB load balancer")
+		return ctrl.Result{}, nil
+	}
+
+	loadBalancerHost := svc.Annotations[loadBalancerHostKey]
+	if loadBalancerHost == "" {
+		// no host set
+		logger.Info("No Host Set for PaperLB load balancer")
+		return ctrl.Result{}, nil
+	}
+
+	loadBalancerPort := svc.Annotations[loadBalancerPortKey]
+	if loadBalancerPort == "" {
+		// no port set
+		logger.Info("No Port Set for PaperLB load balancer")
+		return ctrl.Result{}, nil
+	}
+
+	loadBalancerPortInt, err := strconv.ParseUint(loadBalancerPort, 10, 16)
+	if err != nil {
+		// port invalid
+		logger.Info("Invalid Port Set for PaperLB load balancer", "loadBalancerPort", loadBalancerPort)
+		return ctrl.Result{}, nil
+	}
+
+	loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
+	// TCP, UDP or blank (defaults to TCP) are allowed
+	if loadBalancerProtocol != string(corev1.ProtocolTCP) && loadBalancerProtocol != string(corev1.ProtocolUDP) && loadBalancerProtocol != "" {
+		// protocol invalid
+		logger.Info("Invalid Protocol Set for PaperLB load balancer", "loadBalancerProtocol", loadBalancerProtocol)
+		return ctrl.Result{}, nil
+	}
+
+	if len(svc.Spec.Ports) == 0 {
+		// no ports set
+		logger.Info("no ports set on service")
+		return ctrl.Result{}, nil
+	}
+
+	portsData := svc.Spec.Ports[0]
+
+	nodePort := portsData.NodePort
+	if nodePort == 0 {
+		// nodeport not set
+		logger.Info("nodeport not set on service")
+		return ctrl.Result{}, nil
+	}
+
+	// get nodes
+	nodes := &v1.NodeList{}
+	err = r.List(ctx, nodes)
+	if err != nil {
+		logger.Error(err, "Failed to get nodes")
+		return ctrl.Result{}, err
+	}
+
+	targets := []lbv1alpha1.Target{}
+	for _, node := range nodes.Items {
+		host := r.findExternalIP(&node)
+		if host == "" {
+			logger.Error(err, "Failed to get external ip for node", "node", node.Name)
+			return ctrl.Result{}, err
+		}
+		targets = append(targets, lbv1alpha1.Target{Host: host, Port: int(nodePort)})
+	}
+
+	// Define new load balancer
+	lb, err := r.loadBalancerForService(svc, httpUpdaterURL, loadBalancerHost, int(loadBalancerPortInt), loadBalancerProtocol, targets)
+	if err != nil {
+		logger.Error(err, "Failed to build new load balancer", "LoadBalancer.Name", svc.Name)
+		return ctrl.Result{}, err
+	}
 
 	// Check if the object already exists, if not create a new one
-	lb := &lbv1alpha1.LoadBalancer{}
-	err = r.Get(ctx, types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, lb)
+	existingLb := &lbv1alpha1.LoadBalancer{}
+	err = r.Get(ctx, types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, existingLb)
 	if err != nil && errors.IsNotFound(err) {
-		httpUpdaterURL := svc.Annotations[loadBalancerHttpUpdaterURLKey]
-		if httpUpdaterURL == "" {
-			// no http updater url set
-			logger.Info("No http updater url set for PaperLB load balancer")
-			return ctrl.Result{}, nil
-		}
-
-		loadBalancerHost := svc.Annotations[loadBalancerHostKey]
-		if loadBalancerHost == "" {
-			// no host set
-			logger.Info("No Host Set for PaperLB load balancer")
-			return ctrl.Result{}, nil
-		}
-
-		loadBalancerPort := svc.Annotations[loadBalancerPortKey]
-		if loadBalancerPort == "" {
-			// no port set
-			logger.Info("No Port Set for PaperLB load balancer")
-			return ctrl.Result{}, nil
-		}
-
-		loadBalancerPortInt, err := strconv.ParseUint(loadBalancerPort, 10, 16)
-		if err != nil {
-			// port invalid
-			logger.Info("Invalid Port Set for PaperLB load balancer", "loadBalancerPort", loadBalancerPort)
-			return ctrl.Result{}, nil
-		}
-
-		loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
-		// TCP, UDP or blank (defaults to TCP) are allowed
-		if loadBalancerProtocol != string(corev1.ProtocolTCP) && loadBalancerProtocol != string(corev1.ProtocolUDP) && loadBalancerProtocol != "" {
-			// protocol invalid
-			logger.Info("Invalid Protocol Set for PaperLB load balancer", "loadBalancerProtocol", loadBalancerProtocol)
-			return ctrl.Result{}, nil
-		}
-
-		if len(svc.Spec.Ports) == 0 {
-			// no ports set
-			logger.Info("no ports set on service")
-			return ctrl.Result{}, nil
-		}
-
-		portsData := svc.Spec.Ports[0]
-
-		nodePort := portsData.NodePort
-		if nodePort == 0 {
-			// nodeport not set
-			logger.Info("nodeport not set on service")
-			return ctrl.Result{}, nil
-		}
-
-		// get nodes
-		nodes := &v1.NodeList{}
-		err = r.List(ctx, nodes)
-		if err != nil {
-			logger.Error(err, "Failed to get nodes")
-			return ctrl.Result{}, err
-		}
-
-		targets := []lbv1alpha1.Target{}
-		for _, node := range nodes.Items {
-			host := r.findExternalIP(&node)
-			if host == "" {
-				logger.Error(err, "Failed to get external ip for node", "node", node.Name)
-				return ctrl.Result{}, err
-			}
-			targets = append(targets, lbv1alpha1.Target{Host: host, Port: int(nodePort)})
-		}
-
-		// Define new load balancer
-		lb, err := r.loadBalancerForService(svc, httpUpdaterURL, loadBalancerHost, int(loadBalancerPortInt), loadBalancerProtocol, targets)
-		if err != nil {
-			logger.Error(err, "Failed to build new load balancer", "LoadBalancer.Name", svc.Name)
-			return ctrl.Result{}, err
-		}
-
-		logger.Info("Creating a new Load Balancer", "LoadBalancer.Name", lb.Name)
+		logger.Info("Creating a Load Balancer", "LoadBalancer.Name", lb.Name)
 		err = r.Create(ctx, lb)
 		if err != nil {
-			logger.Error(err, "Failed to create new Load Balancer", "LoadBalancer.Name", lb.Name)
+			logger.Error(err, "Failed to create Load Balancer", "LoadBalancer.Name", lb.Name)
 			return ctrl.Result{}, err
 		}
 
-		r.Status().Update(ctx, lb)
+		lb.Status.Phase = lbv1alpha1.LoadBalancerPhasePending
+		lb.Status.TargetCount = len(targets)
+
+		err = r.Status().Update(ctx, lb)
+		if err != nil {
+			logger.Error(err, "Failed to initialize Load Balancer status", "LoadBalancer.Name", lb.Name)
+			return ctrl.Result{}, err
+		}
 
 		// created successfully - return and requeue
 		return ctrl.Result{Requeue: true}, nil
@@ -171,7 +177,20 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	//TODO: check spec diff and update
+	if equality.Semantic.DeepEqual(lb.Spec, existingLb.Spec) {
+		// nothing to update
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("Updating Load Balancer", "LoadBalancer.Name", existingLb.Name)
+
+	existingLb.Spec = lb.Spec
+
+	err = r.Update(ctx, existingLb)
+	if err != nil {
+		logger.Error(err, "Failed to update Load Balancer", "LoadBalancer.Name", existingLb.Name)
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }

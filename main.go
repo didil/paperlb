@@ -33,6 +33,7 @@ import (
 
 	lbv1alpha1 "github.com/didil/paperlb/api/v1alpha1"
 	"github.com/didil/paperlb/controllers"
+	"github.com/didil/paperlb/services"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -89,9 +90,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	httpLbUpdaterClient := services.NewHTTPLBUpdaterClient()
+
 	if err = (&controllers.LoadBalancerReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		HTTPLBUpdaterClient: httpLbUpdaterClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LoadBalancer")
 		os.Exit(1)

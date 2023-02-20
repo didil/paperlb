@@ -65,6 +65,9 @@ type LoadBalancerStatus struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=PENDING
 	Phase LoadBalancerPhase `json:"phase,omitempty"`
+
+	// TargetCount is the number of targets
+	TargetCount int `json:"targetCount,omitempty"`
 }
 
 // HTTPUpdater is the http updated for the load balancer
@@ -78,6 +81,7 @@ type HTTPUpdater struct {
 // +kubebuilder:printcolumn:name="Host",type=string,JSONPath=`.spec.host`
 // +kubebuilder:printcolumn:name="Port",type=string,JSONPath=`.spec.port`
 // +kubebuilder:printcolumn:name="Protocol",type=string,JSONPath=`.spec.protocol`
+// +kubebuilder:printcolumn:name="TargetCount",type=string,JSONPath=`.status.targetCount`
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.phase`
 // LoadBalancer is the Schema for the loadbalancers API
 type LoadBalancer struct {
