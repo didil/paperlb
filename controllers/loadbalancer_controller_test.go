@@ -42,7 +42,7 @@ var _ = Describe("LoadBalancer controller", func() {
 
 			ctx := context.Background()
 
-			loadBalancerName := "test-service"
+			loadBalancerName := "my-test-service"
 			updaterURL := "http://example.com/api/v1/lb"
 			lbHost := "192.168.55.99"
 			lbPort := 8888
@@ -54,7 +54,7 @@ var _ = Describe("LoadBalancer controller", func() {
 				Update(gomock.Any(), gomock.Any(), gomock.Any()).
 				Do(func(ctx context.Context, url string, params *services.UpdateParams) error {
 					Expect(url).To(Equal(updaterURL))
-					Expect(params.BackendName).To(Equal("default_test-service"))
+					Expect(params.BackendName).To(Equal("default_my-test-service"))
 					Expect(params.LBPort).To(Equal(lbPort))
 					Expect(params.LBProtocol).To(Equal(lbProtocol))
 					Expect(len(params.UpstreamServers)).To(Equal(1))
