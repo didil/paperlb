@@ -21,6 +21,7 @@ The idea is:
 
 The diagram below tries to summarize this:
 
+![Alt text](paperlb-archi.png?raw=true "PaperLB Architecture")
 
 ## Getting Started
 You’ll need a kubernetes cluster to run against. You can use a local cluster for testing, or run against a remote cluster.
