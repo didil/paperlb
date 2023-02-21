@@ -98,12 +98,19 @@ var _ = Describe("Service controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, service)).Should(Succeed())
 
-			// wait for load balancer creation
+			// wait for load balancer to be ready
 			loadBalancer = &lbv1alpha1.LoadBalancer{}
 			Eventually(func() error {
 				err := k8sClient.Get(ctx, types.NamespacedName{Name: loadBalancerName, Namespace: namespaceName}, loadBalancer)
+				if err != nil {
+					return err
+				}
 
-				return err
+				if loadBalancer.Status.Phase != lbv1alpha1.LoadBalancerPhaseReady {
+					return fmt.Errorf("lb not ready yet")
+				}
+
+				return nil
 			}, timeout, interval).Should(BeNil())
 
 			Expect(loadBalancer.OwnerReferences).To(HaveLen(1))
@@ -171,10 +178,10 @@ var _ = Describe("Service controller", func() {
 
 		AfterEach(func() {
 			ctx := context.Background()
+			Expect(k8sClient.Delete(ctx, service)).Should(Succeed())
 			Expect(k8sClient.Delete(ctx, node1)).Should(Succeed())
 			Expect(k8sClient.Delete(ctx, node2)).Should(Succeed())
 			Expect(k8sClient.Delete(ctx, loadBalancer)).Should(Succeed())
-			Expect(k8sClient.Delete(ctx, service)).Should(Succeed())
 			gomockController.Finish()
 		})
 	})

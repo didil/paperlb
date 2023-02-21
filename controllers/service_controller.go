@@ -65,6 +65,11 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	if !svc.ObjectMeta.DeletionTimestamp.IsZero() {
+		// service is being deleted, skip
+		return ctrl.Result{}, nil
+	}
+
 	if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 		// not a a load balancer service
 		return ctrl.Result{}, nil
@@ -155,36 +160,24 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Check if the object already exists, if not create a new one
 	existingLb := &lbv1alpha1.LoadBalancer{}
 	err = r.Get(ctx, types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, existingLb)
-	if err != nil && apierrors.IsNotFound(err) {
-		logger.Info("Creating a Load Balancer", "LoadBalancer.Name", lb.Name)
-		err = r.Create(ctx, lb)
-		if err != nil {
-			logger.Error(err, "Failed to create Load Balancer", "LoadBalancer.Name", lb.Name)
-			return ctrl.Result{}, err
-		}
-
-		lb.Status.Phase = lbv1alpha1.LoadBalancerPhasePending
-
-		err = r.Status().Update(ctx, lb)
-		if err != nil {
-			logger.Error(err, "Failed to initialize Load Balancer status", "LoadBalancer.Name", lb.Name)
-			return ctrl.Result{}, err
-		}
-
-		// created successfully - return and requeue
-		return ctrl.Result{Requeue: true}, nil
-	} else if err != nil {
+	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			logger.Info("Service resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
+			logger.Info("Creating a Load Balancer", "LoadBalancer.Name", lb.Name)
+			err = r.Create(ctx, lb)
+			if err != nil {
+				logger.Error(err, "Failed to create Load Balancer", "LoadBalancer.Name", lb.Name)
+				return ctrl.Result{}, err
+			}
+
+			// created successfully - return and requeue
+			return ctrl.Result{Requeue: true}, nil
 		}
 
 		logger.Error(err, "Failed to get Load Balancer")
 		return ctrl.Result{}, err
 	}
 
-	if !equality.Semantic.DeepDerivative(existingLb.Spec, lb.Spec) {
+	if !equality.Semantic.DeepEqual(lb.Spec, existingLb.Spec) {
 		logger.Info("Updating Load Balancer", "LoadBalancer.Name", existingLb.Name)
 
 		existingLb.Spec = lb.Spec
