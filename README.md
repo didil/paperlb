@@ -8,9 +8,17 @@ A kubernetes network load balancer operator implementation.
 **THIS SOFTWARE IS WORK IN PROGRESS / ALPHA RELEASE AND IS NOT MEANT FOR USAGE IN PRODUCTION SYSTEMS**
 
 ## What is PaperLB ?
-Vanilla kubernetes does not come with a LoadBalancer Service implementation. If you create a LoadBalancer Service in a self-hosted cluster setup, its status will remain "PENDING".
+You might have noticed that vanilla Kubernetes does not come with a Load Balancer implementation. If you create a LoadBalancer Service in a self-hosted cluster setup, its status will remain "pending" and it won't show an external IP you can use to access the service. It should look something like this:
 
-PaperLB allows you to use an external L4 load balancer (an nginx server for example) in front of your cluster services. 
+````bash
+$ kubectl get services
+NAME                       TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)          AGE
+k8s-pod-info-api-service   LoadBalancer   10.43.12.233   <pending>     5000:31767/TCP   6s
+`````
+
+On the other hand, when you create a LoadBalancer Service in a managed kubernetes cluster such as GCP GKE or AWS EKS, the service will receive an External IP from a Load Balancer assigned by the cloud provider.
+
+PaperLB allows you to use an external L4 load balancer of your choice (an nginx server for example) in front of your cluster services. It should work on your development clusters running locally as well as cloud virtual machines or bare metal.
 
 ![Alt text](paperlb-archi.png?raw=true "PaperLB Architecture")
 
@@ -21,9 +29,9 @@ PaperLB is implemented as a kubernetes "Operator":
 
 The idea is:
 
-- You create a kubernetes LoadBalancer type service and add some paperlb annotations
+- You create a Kubernetes LoadBalancer type service and add some PaperLB annotations
 - The controller notices the service and annotations and creates a "LoadBalancer" object
-- The controller notices the "LoadBalancer" object and updates your actual load balancer using the config from the annotations from and the service/nodes info
+- The controller notices the "LoadBalancer" object and updates your network load balancer using the config data from the annotations + the service/nodes info
 
 
 ## Getting Started
