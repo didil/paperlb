@@ -96,27 +96,8 @@ make run
 kubectl apply -f demo/ 
 ```
 
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Uninstall CRDs
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
-```
-
 ## Contributing
 Please feel free to open issues and / PRs if you'd like to contribute ! You can also get in touch at adil-paperlb@ledidil.com
-
-
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-
 
 ## License
 
