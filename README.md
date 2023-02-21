@@ -18,7 +18,7 @@ k8s-pod-info-api-service   LoadBalancer   10.43.12.233   <pending>     5000:3176
 
 On the other hand, when you create a LoadBalancer Service in a managed kubernetes cluster such as GCP GKE or AWS EKS, the service will receive an External IP from a Load Balancer assigned by the cloud provider.
 
-PaperLB allows you to use an external L4 load balancer of your choice (an nginx server for example) in front of your cluster services. It should work on your development clusters running locally as well as cloud virtual machines or bare metal.
+The idea behind PaperLB is to allow "LoadBalancer" type services to work with external network load balancers in any environment. PaperLB allows you to use an external L4 Load Balancer of your choice (an nginx server for example) in front of your Kubernetes cluster services. It should work on your development clusters running locally as well as cloud virtual machines or bare metal.
 
 ![Alt text](paperlb-archi.png?raw=true "PaperLB Architecture")
 
