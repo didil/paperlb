@@ -8,6 +8,8 @@ A kubernetes network load balancer operator implementation.
 **THIS SOFTWARE IS WORK IN PROGRESS / ALPHA RELEASE AND IS NOT MEANT FOR USAGE IN PRODUCTION SYSTEMS**
 
 ## What is PaperLB ?
+Introduction blog article: [PaperLB. A Kubernetes Network Load Balancer Implementation](https://didil.medium.com/paperlb-fc4c28a82acb) 
+
 You might have noticed that vanilla Kubernetes does not come with a Load Balancer implementation. If you create a LoadBalancer Service in a self-hosted cluster setup, its status will remain "pending" and it won't show an external IP you can use to access the service. It should look something like this:
 
 ````bash
