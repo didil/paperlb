@@ -1,10 +1,14 @@
 # PaperLB
+
+![Alt text](logo-color.png?raw=true "PaperLB Logo")
+
 A kubernetes network load balancer operator implementation.
+
 
 **THIS SOFTWARE IS WORK IN PROGRESS / ALPHA RELEASE AND IS NOT MEANT FOR USAGE IN PRODUCTION SYSTEMS**
 
 ## What is PaperLB ?
-Vanilla kubernetes does not come with a LoadBalancer Service implementation. If you create a LoadBalancer Service in a self-hosting setup, its status will remain "PENDING".
+Vanilla kubernetes does not come with a LoadBalancer Service implementation. If you create a LoadBalancer Service in a self-hosted cluster setup, its status will remain "PENDING".
 
 PaperLB allows you to use an external L4 load balancer (an nginx server for example) in front of your cluster services. 
 
