@@ -5,9 +5,9 @@ metadata:
     app: k8s-pod-info-api
   name: k8s-pod-info-api-service
   annotations:
-    lb.paperlb.com/http-updater-url: "http://192.168.64.1/api/v1/lb"
+    lb.paperlb.com/http-updater-url: "http://192.168.64.1:3000/api/v1/lb"
     lb.paperlb.com/load-balancer-host: "192.168.64.1"
-    lb.paperlb.com/load-balancer-port: "8080"
+    lb.paperlb.com/load-balancer-port: "8100"
     lb.paperlb.com/load-balancer-protocol: "TCP"
 spec:
   ports:

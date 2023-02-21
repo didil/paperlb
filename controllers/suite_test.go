@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -35,7 +34,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	lbv1alpha1 "github.com/didil/paperlb/api/v1alpha1"
-	"github.com/didil/paperlb/mocks"
 	corev1 "k8s.io/api/core/v1"
 	//+kubebuilder:scaffold:imports
 )
@@ -49,17 +47,13 @@ var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
 
-var gomockController *gomock.Controller
-var httpLbUpdaterClient *mocks.MockHTTPLBUpdaterClient
-
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	gomockController = gomock.NewController(t)
-	defer gomockController.Finish()
-
 	RunSpecs(t, "Controller Suite")
 }
+
+var loadBalancerReconciler *LoadBalancerReconciler
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
@@ -71,8 +65,6 @@ var _ = BeforeSuite(func() {
 		CRDDirectoryPaths:     []string{filepath.Join("..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
-
-	httpLbUpdaterClient = mocks.NewMockHTTPLBUpdaterClient(gomockController)
 
 	var err error
 	// cfg is defined in this file globally.
@@ -105,11 +97,12 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&LoadBalancerReconciler{
-		Client:              k8sManager.GetClient(),
-		Scheme:              k8sManager.GetScheme(),
-		HTTPLBUpdaterClient: httpLbUpdaterClient,
-	}).SetupWithManager(k8sManager)
+	loadBalancerReconciler = &LoadBalancerReconciler{
+		Client: k8sManager.GetClient(),
+		Scheme: k8sManager.GetScheme(),
+	}
+
+	err = loadBalancerReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {

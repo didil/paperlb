@@ -21,17 +21,20 @@ import (
 	"strconv"
 
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	lbv1alpha1 "github.com/didil/paperlb/api/v1alpha1"
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 )
@@ -50,7 +53,6 @@ type ServiceReconciler struct {
 
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger = logger.WithValues("service", req.NamespacedName)
 
 	svc, err := r.serviceFor(ctx, req.NamespacedName)
 	if err != nil {
@@ -153,7 +155,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Check if the object already exists, if not create a new one
 	existingLb := &lbv1alpha1.LoadBalancer{}
 	err = r.Get(ctx, types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, existingLb)
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		logger.Info("Creating a Load Balancer", "LoadBalancer.Name", lb.Name)
 		err = r.Create(ctx, lb)
 		if err != nil {
@@ -162,7 +164,6 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		lb.Status.Phase = lbv1alpha1.LoadBalancerPhasePending
-		lb.Status.TargetCount = len(targets)
 
 		err = r.Status().Update(ctx, lb)
 		if err != nil {
@@ -173,23 +174,75 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// created successfully - return and requeue
 		return ctrl.Result{Requeue: true}, nil
 	} else if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			logger.Info("Service resource not found. Ignoring since object must be deleted")
+			return ctrl.Result{}, nil
+		}
+
 		logger.Error(err, "Failed to get Load Balancer")
 		return ctrl.Result{}, err
 	}
 
-	if equality.Semantic.DeepEqual(lb.Spec, existingLb.Spec) {
-		// nothing to update
-		return ctrl.Result{}, nil
+	if !equality.Semantic.DeepEqual(lb.Spec, existingLb.Spec) {
+		logger.Info("Updating Load Balancer", "LoadBalancer.Name", existingLb.Name)
+
+		existingLb.Spec = lb.Spec
+
+		err = r.Update(ctx, existingLb)
+		if err != nil {
+			logger.Error(err, "Failed to update Load Balancer", "LoadBalancer.Name", existingLb.Name)
+			return ctrl.Result{}, err
+		}
+
+		// reset to pending
+		existingLb.Status.Phase = lbv1alpha1.LoadBalancerPhasePending
+		err = r.Status().Update(ctx, existingLb)
+		if err != nil {
+			logger.Error(err, "Failed to reset Load Balancer status to pending", "LoadBalancer.Name", existingLb.Name)
+			return ctrl.Result{}, err
+		}
+
+		// Updated successfully - return and requeue
+		return ctrl.Result{Requeue: true}, nil
 	}
 
-	logger.Info("Updating Load Balancer", "LoadBalancer.Name", existingLb.Name)
+	if existingLb.Status.Phase == lbv1alpha1.LoadBalancerPhaseReady {
+		portStatus := corev1.PortStatus{}
 
-	existingLb.Spec = lb.Spec
+		portStatus.Port = int32(loadBalancerPortInt)
 
-	err = r.Update(ctx, existingLb)
-	if err != nil {
-		logger.Error(err, "Failed to update Load Balancer", "LoadBalancer.Name", existingLb.Name)
-		return ctrl.Result{}, err
+		loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
+		switch corev1.Protocol(loadBalancerProtocol) {
+		case corev1.ProtocolTCP:
+			portStatus.Protocol = corev1.ProtocolTCP
+		case corev1.ProtocolUDP:
+			portStatus.Protocol = corev1.ProtocolUDP
+		default:
+			portStatus.Protocol = corev1.ProtocolTCP
+		}
+
+		ports := []corev1.PortStatus{portStatus}
+
+		targetIngresses := []corev1.LoadBalancerIngress{
+			{
+				IP:    loadBalancerHost,
+				Ports: ports,
+			},
+		}
+
+		ingresses := svc.Status.LoadBalancer.Ingress
+		if !equality.Semantic.DeepEqual(targetIngresses, ingresses) {
+			svc.Status.LoadBalancer.Ingress = targetIngresses
+
+			logger.Info("Adding Load Balancer Host to service", "host", loadBalancerHost)
+
+			err = r.Status().Update(ctx, svc)
+			if err != nil {
+				logger.Error(err, "Failed to update service with load balancer host", "error", err)
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	return ctrl.Result{}, nil
@@ -257,8 +310,52 @@ func (r *ServiceReconciler) serviceFor(ctx context.Context, name types.Namespace
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := r.createServiceTypeIndex(mgr); err != nil {
+		return errors.Wrapf(err, "failed to create service type index")
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Service{}).
+		Watches(&source.Kind{Type: &corev1.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToServices)).
 		Owns(&lbv1alpha1.LoadBalancer{}).
 		Complete(r)
+}
+
+const serviceTypeIndexField = ".spec.Type"
+
+func (r *ServiceReconciler) createServiceTypeIndex(mgr ctrl.Manager) error {
+	return mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&corev1.Service{},
+		serviceTypeIndexField,
+		func(object client.Object) []string {
+			svc := object.(*corev1.Service)
+			return []string{string(svc.Spec.Type)}
+		})
+}
+
+func (r *ServiceReconciler) mapNodeToServices(object client.Object) []reconcile.Request {
+	node := object.(*corev1.Node)
+
+	ctx := context.Background()
+	logger := log.FromContext(ctx)
+
+	serviceList := &corev1.ServiceList{}
+
+	err := r.List(context.Background(), serviceList, client.MatchingFields{serviceTypeIndexField: string(corev1.ServiceTypeLoadBalancer)})
+	if err != nil {
+		logger.Error(err, "could not list services", "node", node.Name)
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(serviceList.Items))
+
+	for _, svc := range serviceList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: client.ObjectKeyFromObject(&svc),
+		})
+	}
+
+	return requests
+
 }
