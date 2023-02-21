@@ -1,5 +1,5 @@
 # PaperLB
-A kubernetes load balancer operator implementation.
+A kubernetes network load balancer operator implementation.
 
 **THIS SOFTWARE IS WORK IN PROGRESS / ALPHA RELEASE AND IS NOT MEANT FOR USAGE IN PRODUCTION SYSTEMS**
 
