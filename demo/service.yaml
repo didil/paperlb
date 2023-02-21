@@ -11,9 +11,9 @@ metadata:
     lb.paperlb.com/load-balancer-protocol: "TCP"
 spec:
   ports:
-  - port: 3000
+  - port: 5000
     protocol: TCP
-    targetPort: 3000
+    targetPort: 4000
   selector:
     app: k8s-pod-info-api
   type: LoadBalancer

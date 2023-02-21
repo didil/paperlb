@@ -102,7 +102,7 @@ func (r *LoadBalancerReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// check if lb update is pending
 	if lb.Status.Phase != lbv1alpha1.LoadBalancerPhaseReady {
-		logger.Info("Updating load balancer via http updater")
+		logger.Info("Updating load balancer via http updater", "oldPhase", lb.Status.Phase, "newPhase", lbv1alpha1.LoadBalancerPhaseReady)
 
 		upstreamServers := []services.UpstreamServer{}
 		for _, target := range lb.Spec.Targets {

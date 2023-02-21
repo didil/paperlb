@@ -184,7 +184,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if !equality.Semantic.DeepEqual(lb.Spec, existingLb.Spec) {
+	if !equality.Semantic.DeepDerivative(existingLb.Spec, lb.Spec) {
 		logger.Info("Updating Load Balancer", "LoadBalancer.Name", existingLb.Name)
 
 		existingLb.Spec = lb.Spec
