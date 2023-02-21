@@ -8,6 +8,8 @@ Vanilla kubernetes does not come with a LoadBalancer Service implementation. If 
 
 PaperLB allows you to use an external L4 load balancer (an nginx server for example) in front of your cluster services. 
 
+![Alt text](paperlb-archi.png?raw=true "PaperLB Architecture")
+
 ## How does it work ?
 PaperLB is implemented as a kubernetes "Operator": 
 - Custom Resource Definitions
@@ -15,13 +17,10 @@ PaperLB is implemented as a kubernetes "Operator":
 
 The idea is:
 
--  You create a kubernetes LoadBalancer type service and add some paperlb annotations
--  The controller notices the service and annotations and creates a "LoadBalancer" object
+- You create a kubernetes LoadBalancer type service and add some paperlb annotations
+- The controller notices the service and annotations and creates a "LoadBalancer" object
 - The controller notices the "LoadBalancer" object and updates your actual load balancer using the config from the annotations from and the service/nodes info
 
-The diagram below tries to summarize this:
-
-![Alt text](paperlb-archi.png?raw=true "PaperLB Architecture")
 
 ## Getting Started
 You’ll need a kubernetes cluster to run against. You can use a local cluster for testing, or run against a remote cluster.
