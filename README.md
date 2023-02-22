@@ -35,6 +35,14 @@ The idea is:
 - The controller notices the service and annotations and creates a "LoadBalancer" object
 - The controller notices the "LoadBalancer" object and updates your network load balancer using the config data from the annotations + the service/nodes info
 
+## Features
+- Works with TCP or UDP L4 load balancers
+- Adapters implemented:
+  - Nginx: https://github.com/didil/nginx-lb-updater
+- Updates load balancer configuration on:
+  - Node updates
+  - Service updates
+- Deletes load balancer configuration on Service deletion
 
 ## Getting Started
 You’ll need a kubernetes cluster to run against. You can use a local cluster for testing, or run against a remote cluster.
