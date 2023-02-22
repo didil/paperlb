@@ -70,6 +70,12 @@ var _ = Describe("Service controller", func() {
 							Address: nodeHost1,
 						},
 					},
+					Conditions: []corev1.NodeCondition{
+						{
+							Type:   corev1.NodeReady,
+							Status: corev1.ConditionTrue,
+						},
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, node1)).Should(Succeed())
@@ -136,6 +142,12 @@ var _ = Describe("Service controller", func() {
 						{
 							Type:    corev1.NodeExternalIP,
 							Address: nodeHost2,
+						},
+					},
+					Conditions: []corev1.NodeCondition{
+						{
+							Type:   corev1.NodeReady,
+							Status: corev1.ConditionTrue,
 						},
 					},
 				},

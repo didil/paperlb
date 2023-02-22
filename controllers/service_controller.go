@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	lbv1alpha1 "github.com/didil/paperlb/api/v1alpha1"
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -123,31 +124,12 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	portsData := svc.Spec.Ports[0]
-
-	nodePort := portsData.NodePort
-	if nodePort == 0 {
-		// nodeport not set
-		logger.Info("nodeport not set on service")
-		return ctrl.Result{}, nil
-	}
-
-	// get nodes
-	nodes := &v1.NodeList{}
-	err = r.List(ctx, nodes)
+	targets, err := r.getTargets(logger, ctx, svc)
 	if err != nil {
-		logger.Error(err, "Failed to get nodes")
 		return ctrl.Result{}, err
 	}
-
-	targets := []lbv1alpha1.Target{}
-	for _, node := range nodes.Items {
-		host := r.findExternalIP(&node)
-		if host == "" {
-			logger.Error(err, "Failed to get external ip for node", "node", node.Name)
-			return ctrl.Result{}, err
-		}
-		targets = append(targets, lbv1alpha1.Target{Host: host, Port: int(nodePort)})
+	if targets == nil {
+		// no targets, skip
 	}
 
 	// Define new load balancer
@@ -249,6 +231,58 @@ func (r *ServiceReconciler) findExternalIP(node *v1.Node) string {
 		}
 	}
 	return ""
+}
+
+func (r *ServiceReconciler) getTargets(logger logr.Logger, ctx context.Context, svc *corev1.Service) ([]lbv1alpha1.Target, error) {
+	portsData := svc.Spec.Ports[0]
+
+	nodePort := portsData.NodePort
+	if nodePort == 0 {
+		// nodeport not set
+		logger.Info("nodeport not set on service")
+		return nil, nil
+	}
+
+	// get nodes
+	nodes := &v1.NodeList{}
+	err := r.List(ctx, nodes)
+	if err != nil {
+		logger.Error(err, "Failed to get nodes")
+		return nil, err
+	}
+
+	targets := []lbv1alpha1.Target{}
+	for _, node := range nodes.Items {
+		if !r.isNodeReady(&node) {
+			continue
+		}
+
+		host := r.findExternalIP(&node)
+		if host == "" {
+			logger.Error(err, "Failed to get external ip for node. Skipping node", "node", node.Name)
+			continue
+		}
+		targets = append(targets, lbv1alpha1.Target{Host: host, Port: int(nodePort)})
+	}
+
+	if len(targets) == 0 {
+		// no targets
+		logger.Info("no targets")
+		return nil, nil
+	}
+
+	return targets, nil
+}
+
+func (r *ServiceReconciler) isNodeReady(node *corev1.Node) bool {
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+			// only target nodes that are healthy
+			return true
+		}
+	}
+
+	return false
 }
 
 func (r *ServiceReconciler) loadBalancerForService(svc *corev1.Service, httpUpdaterURL string, loadBalancerHost string, loadBalancerPortInt int, loadBalancerProtocol string, targets []lbv1alpha1.Target) (*lbv1alpha1.LoadBalancer, error) {
