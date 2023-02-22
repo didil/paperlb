@@ -106,6 +106,13 @@ make run
 kubectl apply -f demo/ 
 ```
 
+# Install PaperLB manifests to remote cluster
+To install PaperLB CRDs and controllers, run:
+````bash
+kubectl apply -f https://raw.githubusercontent.com/didil/paperlb/v0.1.0/config/manifests/paperlb.yaml
+````
+The resources are created in the `paperlb-system` namespace.
+
 ## Contributing
 Please feel free to open issues and / PRs if you'd like to contribute ! You can also get in touch at adil-paperlb@ledidil.com
 
