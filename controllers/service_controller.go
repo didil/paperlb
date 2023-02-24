@@ -106,7 +106,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 		if loadBalancerConfig == nil {
-			logger.Error(err, "Default load balancer config not found")
+			logger.Info("Default load balancer config not found")
 			return ctrl.Result{}, nil
 		}
 	}
@@ -153,7 +153,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Define new load balancer
-	lb, err := r.loadBalancerForService(svc, httpUpdaterURL, loadBalancerHost, string(loadBalancerProtocol), targets)
+	lb, err := r.loadBalancerForService(svc, loadBalancerConfig.Name, httpUpdaterURL, loadBalancerHost, string(loadBalancerProtocol), targets)
 	if err != nil {
 		logger.Error(err, "Failed to build new load balancer", "LoadBalancer.Name", svc.Name)
 		return ctrl.Result{}, err
@@ -277,6 +277,7 @@ func (r *ServiceReconciler) lbNeedsUpdate(logger *logr.Logger, lb, existingLb *l
 		// keep the same port
 		lb.Spec.Port = existingLb.Spec.Port
 	} else {
+		// load balancers need to be deleted manually in case of incompatible port changes on the config
 		logger.Info("Load balancer config update requires port change, this case is not supported at the moment, update skipped.")
 		return false
 	}
@@ -286,7 +287,7 @@ func (r *ServiceReconciler) lbNeedsUpdate(logger *logr.Logger, lb, existingLb *l
 
 func (r *ServiceReconciler) getDefaultLoadBalancerConfig(ctx context.Context) (*lbv1alpha1.LoadBalancerConfig, error) {
 	configsList := &lbv1alpha1.LoadBalancerConfigList{}
-	err := r.List(ctx, configsList)
+	err := r.List(ctx, configsList, client.InNamespace(paperLBSystemNamespaceName))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list configs")
 	}
@@ -391,13 +392,14 @@ func (r *ServiceReconciler) isNodeReady(node *corev1.Node) bool {
 	return false
 }
 
-func (r *ServiceReconciler) loadBalancerForService(svc *corev1.Service, httpUpdaterURL string, loadBalancerHost string, loadBalancerProtocol string, targets []lbv1alpha1.Target) (*lbv1alpha1.LoadBalancer, error) {
+func (r *ServiceReconciler) loadBalancerForService(svc *corev1.Service, configName string, httpUpdaterURL string, loadBalancerHost string, loadBalancerProtocol string, targets []lbv1alpha1.Target) (*lbv1alpha1.LoadBalancer, error) {
 	lb := &lbv1alpha1.LoadBalancer{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      svc.Name,
 			Namespace: svc.Namespace,
 		},
 		Spec: lbv1alpha1.LoadBalancerSpec{
+			ConfigName: configName,
 			HTTPUpdater: lbv1alpha1.HTTPUpdater{
 				URL: httpUpdaterURL,
 			},

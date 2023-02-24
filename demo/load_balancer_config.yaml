@@ -1,13 +1,15 @@
 apiVersion: lb.paperlb.com/v1alpha1
 kind: LoadBalancerConfig
-meta:
+metadata:
   name: default-lb-config
   namespace: paperlb-system
+  #optional annotation to use a config different than the default config
+  #annotations: 
+  #  lb.paperlb.com/config-name: "my-special-config"    
 spec:
   default: true
-  httpUpdaterUrl: "http://192.168.64.1:3000/api/v1/lb"
+  httpUpdaterURL: "http://192.168.64.1:3000/api/v1/lb"
   host: "192.168.64.1"
   portRange: 
-    low: "8000"
-    high: "8100"
-    
+    low: 8100
+    high: 8200

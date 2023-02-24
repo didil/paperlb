@@ -143,6 +143,7 @@ var _ = Describe("Service controller", func() {
 			Expect(loadBalancer.OwnerReferences).To(HaveLen(1))
 			Expect(loadBalancer.OwnerReferences[0].UID).To(Equal(service.UID))
 
+			Expect(loadBalancer.Spec.ConfigName).To(Equal(loadBalancerConfig.Name))
 			Expect(loadBalancer.Spec.HTTPUpdater.URL).To(Equal(updaterURL))
 			Expect(loadBalancer.Spec.Host).To(Equal(lbHost))
 			Expect(loadBalancer.Spec.Port).To(Equal(lbPortLow))
@@ -193,6 +194,7 @@ var _ = Describe("Service controller", func() {
 			Expect(loadBalancer.OwnerReferences).To(HaveLen(1))
 			Expect(loadBalancer.OwnerReferences[0].UID).To(Equal(service.UID))
 
+			Expect(loadBalancer.Spec.ConfigName).To(Equal(loadBalancerConfig.Name))
 			Expect(loadBalancer.Spec.HTTPUpdater.URL).To(Equal(updaterURL))
 			Expect(loadBalancer.Spec.Host).To(Equal(lbHost))
 			Expect(loadBalancer.Spec.Port).To(Equal(lbPortLow))
