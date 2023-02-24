@@ -31,9 +31,9 @@ PaperLB is implemented as a kubernetes "Operator":
 
 The idea is:
 
-- You create a Kubernetes LoadBalancer type service and add some PaperLB annotations
-- The controller notices the service and annotations and creates a "LoadBalancer" object
-- The controller notices the "LoadBalancer" object and updates your network load balancer using the config data from the annotations + the service/nodes info
+- You create a Kubernetes LoadBalancer type service and a LoadBalancerConfig configuration object
+- The controller notices the service and LoadBalancerConfig and creates a "LoadBalancer" object
+- The controller notices the "LoadBalancer" object and updates your network load balancer using the config data + the service/nodes info
 
 ## Features
 - Works with TCP or UDP L4 load balancers
