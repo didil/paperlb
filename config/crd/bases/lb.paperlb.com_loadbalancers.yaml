@@ -51,6 +51,9 @@ spec:
           spec:
             description: LoadBalancerSpec defines the desired state of LoadBalancer
             properties:
+              configName:
+                description: ConfigName is the loadbalancer config name
+                type: string
               host:
                 description: Host is the lb host
                 type: string

@@ -8,6 +8,26 @@ rules:
 - apiGroups:
   - lb.paperlb.com
   resources:
+  - loadbalancerconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - lb.paperlb.com
+  resources:
+  - loadbalancerconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - lb.paperlb.com
+  resources:
   - loadbalancers
   verbs:
   - create
@@ -31,6 +51,20 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - v1
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - v1
+  resources:
+  - nodes/status
+  verbs:
+  - get
 - apiGroups:
   - v1
   resources:

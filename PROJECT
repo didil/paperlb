@@ -17,4 +17,12 @@ resources:
   kind: LoadBalancer
   path: github.com/didil/paperlb/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: paperlb.com
+  group: lb
+  kind: LoadBalancerConfig
+  path: github.com/didil/paperlb/api/v1alpha1
+  version: v1alpha1
 version: "3"

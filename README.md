@@ -31,9 +31,9 @@ PaperLB is implemented as a kubernetes "Operator":
 
 The idea is:
 
-- You create a Kubernetes LoadBalancer type service and add some PaperLB annotations
-- The controller notices the service and annotations and creates a "LoadBalancer" object
-- The controller notices the "LoadBalancer" object and updates your network load balancer using the config data from the annotations + the service/nodes info
+- You create a Kubernetes LoadBalancer type service and a LoadBalancerConfig configuration object
+- The controller notices the service and LoadBalancerConfig and creates a "LoadBalancer" object
+- The controller notices the "LoadBalancer" object and updates your network load balancer using the config data + the service/nodes info
 
 ## Features
 - Works with TCP or UDP L4 load balancers
@@ -49,6 +49,7 @@ You’ll need a kubernetes cluster to run against. You can use a local cluster f
 **Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
 
 ### Usage
+You can find the full example in the demo/ directory
 Service example:
 ````yaml
 apiVersion: v1
@@ -57,11 +58,9 @@ metadata:
   labels:
     app: k8s-pod-info-api
   name: k8s-pod-info-api-service
-  annotations:
-    lb.paperlb.com/http-updater-url: "http://192.168.64.1:3000/api/v1/lb"
-    lb.paperlb.com/load-balancer-host: "192.168.64.1"
-    lb.paperlb.com/load-balancer-port: "8100"
-    lb.paperlb.com/load-balancer-protocol: "TCP"
+  #optional annotation to use a config different than the default config
+  #annotations: 
+  #  lb.paperlb.com/config-name: "my-special-config"  
 spec:
   ports:
   - port: 5000
@@ -70,14 +69,53 @@ spec:
   selector:
     app: k8s-pod-info-api
   type: LoadBalancer
+  ````
+
+LoadBalancerConfig example:
+````yaml
+apiVersion: lb.paperlb.com/v1alpha1
+kind: LoadBalancerConfig
+metadata:
+  name: default-lb-config
+  namespace: paperlb-system
+spec:
+  default: true
+  httpUpdaterURL: "http://192.168.64.1:3000/api/v1/lb"
+  host: "192.168.64.1"
+  portRange: 
+    low: 8100
+    high: 8200
 ````
 
-Annotations: 
-- `lb.paperlb.com/http-updater-url`: URL where the http lb updater instance can be called. The API is explained here: https://github.com/didil/nginx-lb-updater#api
-- `lb.paperlb.com/load-balancer-host`: Load Balancer Host
-- `lb.paperlb.com/load-balancer-port`: Load Balancer Port
-- `lb.paperlb.com/load-balancer-protocol`: Load Balancer Protocol (`TCP` or `UDP`)
- 
+LoadBalancerConfig fields:
+- `.spec.default`: "true" if this should be the default config, false otherwise
+- `.spec.httpUpdaterURL`: URL where the http lb updater instance can be called. The API is explained here: https://github.com/didil/nginx-lb-updater#api
+- `.spec.host`: Load Balancer Host
+- `.spec.portRange`: The controller will select a load balancer port from this range  
+- `.spec.portRange.low`: Lowest of the available ports on the load balancer 
+- `.spec.portRange.high`: Highest of the available ports on the load balancer 
+
+When you apply these manifests, a load balancer resource should be created. To get the load balancer connection info you can run:
+````bash
+$ k get loadbalancer k8s-pod-info-api-service
+NAME                       HOST           PORT   PROTOCOL   TARGETCOUNT   STATUS
+k8s-pod-info-api-service   192.168.64.1   8100   TCP        2             READY
+````
+
+Testing with Curl
+````bash
+$ curl -s 192.168.64.1:8100/api/v1/info|jq
+  "pod": {
+    "name": "k8s-pod-info-api-84dc7c9bdd-mz74t",
+    "ip": "10.42.0.27",
+    "namespace": "default",
+    "serviceAccountName": "default"
+  },
+  "node": {
+    "name": "k3s-local-server"
+  }
+}
+````
 
 
 ### Run tests

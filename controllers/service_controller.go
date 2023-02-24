@@ -18,7 +18,8 @@ package controllers
 
 import (
 	"context"
-	"strconv"
+	"fmt"
+	"sort"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -37,7 +38,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 )
 
 // ServiceReconciler reconciles a Service object
@@ -49,8 +49,12 @@ type ServiceReconciler struct {
 //+kubebuilder:rbac:groups=v1,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=v1,resources=services/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=v1,resources=services/finalizers,verbs=update
+//+kubebuilder:rbac:groups=v1,resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=v1,resources=nodes/status,verbs=get
 //+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancers/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancerconfigs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancerconfigs/status,verbs=get;update;patch
 
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -82,39 +86,42 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	httpUpdaterURL := svc.Annotations[loadBalancerHttpUpdaterURLKey]
+	var loadBalancerConfig *lbv1alpha1.LoadBalancerConfig
+	if configName := svc.Annotations[loadBalancerConfigNameKey]; configName != "" {
+		// find config with the name specified
+		loadBalancerConfig, err = r.getLoadBalancerConfigByName(ctx, configName)
+		if err != nil {
+			logger.Error(err, "Failed to get config by name", "loadBalancerConfigName", configName, "error", err)
+			return ctrl.Result{}, err
+		}
+		if loadBalancerConfig == nil {
+			logger.Error(err, "Specified load balancer config not found", "loadBalancerConfigName", configName)
+			return ctrl.Result{}, nil
+		}
+	} else {
+		// find default config
+		loadBalancerConfig, err = r.getDefaultLoadBalancerConfig(ctx)
+		if err != nil {
+			logger.Error(err, "Failed to get default config", "error", err)
+			return ctrl.Result{}, err
+		}
+		if loadBalancerConfig == nil {
+			logger.Info("Default load balancer config not found")
+			return ctrl.Result{}, nil
+		}
+	}
+
+	httpUpdaterURL := loadBalancerConfig.Spec.HTTPUpdaterURL
 	if httpUpdaterURL == "" {
 		// no http updater url set
-		logger.Info("No http updater url set for PaperLB load balancer")
+		logger.Info("No http updater url set in load balancer config", "loadBalancerConfigName", loadBalancerConfig.Name)
 		return ctrl.Result{}, nil
 	}
 
-	loadBalancerHost := svc.Annotations[loadBalancerHostKey]
+	loadBalancerHost := loadBalancerConfig.Spec.Host
 	if loadBalancerHost == "" {
 		// no host set
-		logger.Info("No Host Set for PaperLB load balancer")
-		return ctrl.Result{}, nil
-	}
-
-	loadBalancerPort := svc.Annotations[loadBalancerPortKey]
-	if loadBalancerPort == "" {
-		// no port set
-		logger.Info("No Port Set for PaperLB load balancer")
-		return ctrl.Result{}, nil
-	}
-
-	loadBalancerPortInt, err := strconv.ParseUint(loadBalancerPort, 10, 16)
-	if err != nil {
-		// port invalid
-		logger.Info("Invalid Port Set for PaperLB load balancer", "loadBalancerPort", loadBalancerPort)
-		return ctrl.Result{}, nil
-	}
-
-	loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
-	// TCP, UDP or blank (defaults to TCP) are allowed
-	if loadBalancerProtocol != string(corev1.ProtocolTCP) && loadBalancerProtocol != string(corev1.ProtocolUDP) && loadBalancerProtocol != "" {
-		// protocol invalid
-		logger.Info("Invalid Protocol Set for PaperLB load balancer", "loadBalancerProtocol", loadBalancerProtocol)
+		logger.Info("No host set in load balancer config", "loadBalancerConfigName", loadBalancerConfig.Name)
 		return ctrl.Result{}, nil
 	}
 
@@ -124,16 +131,29 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	loadBalancerProtocol := svc.Spec.Ports[0].Protocol
+	if loadBalancerProtocol == "" {
+		// defaults to TCP
+		loadBalancerProtocol = corev1.ProtocolTCP
+	}
+	// TCP, UDP or blank (defaults to TCP) are allowed
+	if loadBalancerProtocol != corev1.ProtocolTCP && loadBalancerProtocol != corev1.ProtocolUDP {
+		// protocol invalid
+		logger.Info("Invalid Protocol Set for PaperLB load balancer", "loadBalancerProtocol", loadBalancerProtocol)
+		return ctrl.Result{}, nil
+	}
+
 	targets, err := r.getTargets(logger, ctx, svc)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if targets == nil {
 		// no targets, skip
+		return ctrl.Result{}, err
 	}
 
 	// Define new load balancer
-	lb, err := r.loadBalancerForService(svc, httpUpdaterURL, loadBalancerHost, int(loadBalancerPortInt), loadBalancerProtocol, targets)
+	lb, err := r.loadBalancerForService(svc, loadBalancerConfig.Name, httpUpdaterURL, loadBalancerHost, string(loadBalancerProtocol), targets)
 	if err != nil {
 		logger.Error(err, "Failed to build new load balancer", "LoadBalancer.Name", svc.Name)
 		return ctrl.Result{}, err
@@ -144,6 +164,18 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err = r.Get(ctx, types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, existingLb)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			loadBalancerPort, err := r.findAvailableLoadBalancerPort(ctx, loadBalancerConfig)
+			if err != nil {
+				logger.Error(err, "Failed to find available load balancer port", "loadBalancerConfigName", loadBalancerConfig.Name, "error", err)
+				return ctrl.Result{}, err
+			}
+			if loadBalancerPort == 0 {
+				logger.Info("No available load balancer port found", "loadBalancerConfigName", loadBalancerConfig.Name)
+				return ctrl.Result{}, nil
+			}
+
+			lb.Spec.Port = loadBalancerPort
+
 			logger.Info("Creating a Load Balancer", "LoadBalancer.Name", lb.Name)
 			err = r.Create(ctx, lb)
 			if err != nil {
@@ -159,7 +191,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if !equality.Semantic.DeepEqual(lb.Spec, existingLb.Spec) {
+	if r.lbNeedsUpdate(&logger, lb, existingLb, loadBalancerConfig) {
 		logger.Info("Updating Load Balancer", "LoadBalancer.Name", existingLb.Name)
 
 		existingLb.Spec = lb.Spec
@@ -185,9 +217,9 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if existingLb.Status.Phase == lbv1alpha1.LoadBalancerPhaseReady {
 		portStatus := corev1.PortStatus{}
 
-		portStatus.Port = int32(loadBalancerPortInt)
+		portStatus.Port = int32(existingLb.Spec.Port)
 
-		loadBalancerProtocol := svc.Annotations[loadBalancerProtocolKey]
+		loadBalancerProtocol := existingLb.Spec.Protocol
 		switch corev1.Protocol(loadBalancerProtocol) {
 		case corev1.ProtocolTCP:
 			portStatus.Protocol = corev1.ProtocolTCP
@@ -223,10 +255,85 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-func (r *ServiceReconciler) findExternalIP(node *v1.Node) string {
+var paperLBSystemNamespaceName = "paperlb-system"
+
+func (r *ServiceReconciler) getLoadBalancerConfigByName(ctx context.Context, name string) (*lbv1alpha1.LoadBalancerConfig, error) {
+	config := &lbv1alpha1.LoadBalancerConfig{}
+
+	err := r.Get(ctx, types.NamespacedName{Namespace: paperLBSystemNamespaceName, Name: name}, config)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "failed to fetch load balancer config")
+	}
+
+	return config, nil
+}
+
+func (r *ServiceReconciler) lbNeedsUpdate(logger *logr.Logger, lb, existingLb *lbv1alpha1.LoadBalancer, config *lbv1alpha1.LoadBalancerConfig) bool {
+	if existingLb.Spec.Port >= config.Spec.PortRange.Low && existingLb.Spec.Port <= config.Spec.PortRange.High {
+		// existing port is still in valid range
+		// keep the same port
+		lb.Spec.Port = existingLb.Spec.Port
+	} else {
+		// load balancers need to be deleted manually in case of incompatible port changes on the config
+		logger.Info("Load balancer config update requires port change, this case is not supported at the moment, update skipped.")
+		return false
+	}
+
+	return !equality.Semantic.DeepEqual(lb.Spec, existingLb.Spec)
+}
+
+func (r *ServiceReconciler) getDefaultLoadBalancerConfig(ctx context.Context) (*lbv1alpha1.LoadBalancerConfig, error) {
+	configsList := &lbv1alpha1.LoadBalancerConfigList{}
+	err := r.List(ctx, configsList, client.InNamespace(paperLBSystemNamespaceName))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list configs")
+	}
+	if len(configsList.Items) == 0 {
+		return nil, nil
+	}
+	// sort configs by creation date to be able to take only the first one if multiple have default set to true
+	sort.Slice(configsList.Items, func(i, j int) bool {
+		return configsList.Items[i].CreationTimestamp.Before(&configsList.Items[j].CreationTimestamp)
+	})
+
+	for _, config := range configsList.Items {
+		if config.Spec.Default {
+			return &config, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *ServiceReconciler) findAvailableLoadBalancerPort(ctx context.Context, config *lbv1alpha1.LoadBalancerConfig) (int, error) {
+	lbList := &lbv1alpha1.LoadBalancerList{}
+
+	err := r.List(context.Background(), lbList, client.MatchingFields{loadBalancerConfigNameIndexField: string(config.Name)})
+	if err != nil {
+		return 0, fmt.Errorf("could not list load balancers for config name %s", config.Name)
+	}
+	used := map[int]bool{}
+	for _, lb := range lbList.Items {
+		used[lb.Spec.Port] = true
+	}
+
+	for i := config.Spec.PortRange.Low; i <= config.Spec.PortRange.High; i++ {
+		if !used[i] {
+			return i, nil
+		}
+	}
+
+	// no available port found
+	return 0, nil
+}
+
+func (r *ServiceReconciler) findExternalIP(node *corev1.Node) string {
 	addrs := node.Status.Addresses
 	for _, addr := range addrs {
-		if addr.Type == v1.NodeExternalIP {
+		if addr.Type == corev1.NodeExternalIP {
 			return addr.Address
 		}
 	}
@@ -244,7 +351,7 @@ func (r *ServiceReconciler) getTargets(logger logr.Logger, ctx context.Context, 
 	}
 
 	// get nodes
-	nodes := &v1.NodeList{}
+	nodes := &corev1.NodeList{}
 	err := r.List(ctx, nodes)
 	if err != nil {
 		logger.Error(err, "Failed to get nodes")
@@ -285,18 +392,18 @@ func (r *ServiceReconciler) isNodeReady(node *corev1.Node) bool {
 	return false
 }
 
-func (r *ServiceReconciler) loadBalancerForService(svc *corev1.Service, httpUpdaterURL string, loadBalancerHost string, loadBalancerPortInt int, loadBalancerProtocol string, targets []lbv1alpha1.Target) (*lbv1alpha1.LoadBalancer, error) {
+func (r *ServiceReconciler) loadBalancerForService(svc *corev1.Service, configName string, httpUpdaterURL string, loadBalancerHost string, loadBalancerProtocol string, targets []lbv1alpha1.Target) (*lbv1alpha1.LoadBalancer, error) {
 	lb := &lbv1alpha1.LoadBalancer{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      svc.Name,
 			Namespace: svc.Namespace,
 		},
 		Spec: lbv1alpha1.LoadBalancerSpec{
+			ConfigName: configName,
 			HTTPUpdater: lbv1alpha1.HTTPUpdater{
 				URL: httpUpdaterURL,
 			},
 			Host:     loadBalancerHost,
-			Port:     loadBalancerPortInt,
 			Protocol: loadBalancerProtocol,
 			Targets:  targets,
 		},
@@ -310,10 +417,7 @@ func (r *ServiceReconciler) loadBalancerForService(svc *corev1.Service, httpUpda
 	return lb, nil
 }
 
-const loadBalancerHttpUpdaterURLKey = "lb.paperlb.com/http-updater-url"
-const loadBalancerHostKey = "lb.paperlb.com/load-balancer-host"
-const loadBalancerPortKey = "lb.paperlb.com/load-balancer-port"
-const loadBalancerProtocolKey = "lb.paperlb.com/load-balancer-protocol"
+const loadBalancerConfigNameKey = "lb.paperlb.com/config-name"
 
 const paperLBloadBalancerClass = "lb.paperlb.com/paperlb-class"
 
@@ -341,9 +445,16 @@ func (r *ServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return errors.Wrapf(err, "failed to create service type index")
 	}
 
+	if err := r.createLoadBalancerConfigNameIndex(mgr); err != nil {
+		return errors.Wrapf(err, "failed to create load balancer config name  index")
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Service{}).
+		// watches node changes to be able to update targets
 		Watches(&source.Kind{Type: &corev1.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToServices)).
+		// watches config changes to be able to update load balancer params
+		Watches(&source.Kind{Type: &lbv1alpha1.LoadBalancerConfig{}}, handler.EnqueueRequestsFromMapFunc(r.mapLoadBalancerConfigToServices)).
 		Owns(&lbv1alpha1.LoadBalancer{}).
 		Complete(r)
 }
@@ -358,6 +469,19 @@ func (r *ServiceReconciler) createServiceTypeIndex(mgr ctrl.Manager) error {
 		func(object client.Object) []string {
 			svc := object.(*corev1.Service)
 			return []string{string(svc.Spec.Type)}
+		})
+}
+
+const loadBalancerConfigNameIndexField = ".spec.ConfigName"
+
+func (r *ServiceReconciler) createLoadBalancerConfigNameIndex(mgr ctrl.Manager) error {
+	return mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&lbv1alpha1.LoadBalancer{},
+		loadBalancerConfigNameIndexField,
+		func(object client.Object) []string {
+			lb := object.(*lbv1alpha1.LoadBalancer)
+			return []string{string(lb.Spec.ConfigName)}
 		})
 }
 
@@ -384,5 +508,37 @@ func (r *ServiceReconciler) mapNodeToServices(object client.Object) []reconcile.
 	}
 
 	return requests
+}
 
+func (r *ServiceReconciler) mapLoadBalancerConfigToServices(object client.Object) []reconcile.Request {
+	lbConfig := object.(*lbv1alpha1.LoadBalancerConfig)
+
+	ctx := context.Background()
+	logger := log.FromContext(ctx)
+
+	lbList := &lbv1alpha1.LoadBalancerList{}
+
+	err := r.List(context.Background(), lbList, client.MatchingFields{loadBalancerConfigNameIndexField: string(lbConfig.Name)})
+	if err != nil {
+		logger.Error(err, "could not list load balancers", "lbConfigName", lbConfig.Name)
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(lbList.Items))
+
+	for _, lb := range lbList.Items {
+		ownerReferences := lb.GetOwnerReferences()
+		for _, ownerReference := range ownerReferences {
+			if ownerReference.Kind == "Service" {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: lb.Namespace,
+						Name:      ownerReference.Name,
+					},
+				})
+			}
+		}
+	}
+
+	return requests
 }

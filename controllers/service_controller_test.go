@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -31,9 +30,11 @@ var _ = Describe("Service controller", func() {
 		var gomockController *gomock.Controller
 		var httpLbUpdaterClient *mocks.MockHTTPLBUpdaterClient
 		var service *corev1.Service
+		var loadBalancerConfig *lbv1alpha1.LoadBalancerConfig
 		var loadBalancer *lbv1alpha1.LoadBalancer
 		var node1 *corev1.Node
 		var node2 *corev1.Node
+		var paperLBSystemNamespace *corev1.Namespace
 
 		BeforeEach(func() {
 			gomockController = gomock.NewController(GinkgoT())
@@ -51,12 +52,21 @@ var _ = Describe("Service controller", func() {
 			loadBalancerName := "test-service"
 			updaterURL := "http://example.com/api/v1/lb"
 			lbHost := "192.168.55.99"
-			lbPort := 8888
+			lbPortLow := 9000
+			lbPortHigh := 9050
+
 			lbProtocol := "TCP"
 
 			port := 8000
 			targetPort := 8100
 			nodePort := 30100
+
+			paperLBSystemNamespace = &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: paperLBSystemNamespaceName,
+				},
+			}
+			Expect(k8sClient.Create(ctx, paperLBSystemNamespace)).Should(Succeed())
 
 			nodeHost1 := "1.2.3.4"
 			node1 = &corev1.Node{
@@ -80,16 +90,27 @@ var _ = Describe("Service controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, node1)).Should(Succeed())
 
+			loadBalancerConfig = &lbv1alpha1.LoadBalancerConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "default-lb-config",
+					Namespace: paperLBSystemNamespaceName,
+				},
+				Spec: lbv1alpha1.LoadBalancerConfigSpec{
+					Default:        true,
+					HTTPUpdaterURL: updaterURL,
+					Host:           lbHost,
+					PortRange: lbv1alpha1.PortRange{
+						Low:  lbPortLow,
+						High: lbPortHigh,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, loadBalancerConfig)).Should(Succeed())
+
 			service = &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      serviceName,
 					Namespace: namespaceName,
-					Annotations: map[string]string{
-						"lb.paperlb.com/http-updater-url":       updaterURL,
-						"lb.paperlb.com/load-balancer-host":     lbHost,
-						"lb.paperlb.com/load-balancer-port":     strconv.Itoa(lbPort),
-						"lb.paperlb.com/load-balancer-protocol": lbProtocol,
-					},
 				},
 				Spec: corev1.ServiceSpec{
 					Ports: []corev1.ServicePort{
@@ -122,9 +143,10 @@ var _ = Describe("Service controller", func() {
 			Expect(loadBalancer.OwnerReferences).To(HaveLen(1))
 			Expect(loadBalancer.OwnerReferences[0].UID).To(Equal(service.UID))
 
+			Expect(loadBalancer.Spec.ConfigName).To(Equal(loadBalancerConfig.Name))
 			Expect(loadBalancer.Spec.HTTPUpdater.URL).To(Equal(updaterURL))
 			Expect(loadBalancer.Spec.Host).To(Equal(lbHost))
-			Expect(loadBalancer.Spec.Port).To(Equal(lbPort))
+			Expect(loadBalancer.Spec.Port).To(Equal(lbPortLow))
 			Expect(loadBalancer.Spec.Protocol).To(Equal(lbProtocol))
 			Expect(loadBalancer.Spec.Targets).To(HaveLen(1))
 			Expect(loadBalancer.Spec.Targets[0]).To(Equal(lbv1alpha1.Target{
@@ -172,9 +194,10 @@ var _ = Describe("Service controller", func() {
 			Expect(loadBalancer.OwnerReferences).To(HaveLen(1))
 			Expect(loadBalancer.OwnerReferences[0].UID).To(Equal(service.UID))
 
+			Expect(loadBalancer.Spec.ConfigName).To(Equal(loadBalancerConfig.Name))
 			Expect(loadBalancer.Spec.HTTPUpdater.URL).To(Equal(updaterURL))
 			Expect(loadBalancer.Spec.Host).To(Equal(lbHost))
-			Expect(loadBalancer.Spec.Port).To(Equal(lbPort))
+			Expect(loadBalancer.Spec.Port).To(Equal(lbPortLow))
 			Expect(loadBalancer.Spec.Protocol).To(Equal(lbProtocol))
 			Expect(loadBalancer.Spec.Targets).To(ContainElements(
 				lbv1alpha1.Target{
@@ -194,6 +217,8 @@ var _ = Describe("Service controller", func() {
 			Expect(k8sClient.Delete(ctx, node1)).Should(Succeed())
 			Expect(k8sClient.Delete(ctx, node2)).Should(Succeed())
 			Expect(k8sClient.Delete(ctx, loadBalancer)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, loadBalancerConfig)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, paperLBSystemNamespace)).Should(Succeed())
 			gomockController.Finish()
 		})
 	})

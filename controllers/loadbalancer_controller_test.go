@@ -42,6 +42,7 @@ var _ = Describe("LoadBalancer controller", func() {
 
 			ctx := context.Background()
 
+			loadBalancerConfigName := "my-load-balancer-config"
 			loadBalancerName := "my-test-service"
 			updaterURL := "http://example.com/api/v1/lb"
 			lbHost := "192.168.55.99"
@@ -71,6 +72,7 @@ var _ = Describe("LoadBalancer controller", func() {
 					Namespace: namespaceName,
 				},
 				Spec: lbv1alpha1.LoadBalancerSpec{
+					ConfigName: loadBalancerConfigName,
 					HTTPUpdater: lbv1alpha1.HTTPUpdater{
 						URL: updaterURL,
 					},
