@@ -37,7 +37,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 )
 
 // ServiceReconciler reconciles a Service object
@@ -49,8 +48,12 @@ type ServiceReconciler struct {
 //+kubebuilder:rbac:groups=v1,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=v1,resources=services/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=v1,resources=services/finalizers,verbs=update
+//+kubebuilder:rbac:groups=v1,resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=v1,resources=nodes/status,verbs=get
 //+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancers/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancerconfigs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=lb.paperlb.com,resources=loadbalancerconfigs/status,verbs=get;update;patch
 
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -223,10 +226,10 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-func (r *ServiceReconciler) findExternalIP(node *v1.Node) string {
+func (r *ServiceReconciler) findExternalIP(node *corev1.Node) string {
 	addrs := node.Status.Addresses
 	for _, addr := range addrs {
-		if addr.Type == v1.NodeExternalIP {
+		if addr.Type == corev1.NodeExternalIP {
 			return addr.Address
 		}
 	}
@@ -244,7 +247,7 @@ func (r *ServiceReconciler) getTargets(logger logr.Logger, ctx context.Context, 
 	}
 
 	// get nodes
-	nodes := &v1.NodeList{}
+	nodes := &corev1.NodeList{}
 	err := r.List(ctx, nodes)
 	if err != nil {
 		logger.Error(err, "Failed to get nodes")
@@ -341,9 +344,16 @@ func (r *ServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return errors.Wrapf(err, "failed to create service type index")
 	}
 
+	if err := r.createLoadBalancerConfigNameIndex(mgr); err != nil {
+		return errors.Wrapf(err, "failed to create load balancer config name  index")
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Service{}).
+		// watches node changes to be able to update targets
 		Watches(&source.Kind{Type: &corev1.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToServices)).
+		// watches config changes to be able to update load balancer params
+		Watches(&source.Kind{Type: &lbv1alpha1.LoadBalancerConfig{}}, handler.EnqueueRequestsFromMapFunc(r.mapLoadBalancerConfigToServices)).
 		Owns(&lbv1alpha1.LoadBalancer{}).
 		Complete(r)
 }
@@ -358,6 +368,19 @@ func (r *ServiceReconciler) createServiceTypeIndex(mgr ctrl.Manager) error {
 		func(object client.Object) []string {
 			svc := object.(*corev1.Service)
 			return []string{string(svc.Spec.Type)}
+		})
+}
+
+const loadBalancerConfigNameIndexField = ".spec.ConfigName"
+
+func (r *ServiceReconciler) createLoadBalancerConfigNameIndex(mgr ctrl.Manager) error {
+	return mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&lbv1alpha1.LoadBalancer{},
+		loadBalancerConfigNameIndexField,
+		func(object client.Object) []string {
+			lb := object.(*lbv1alpha1.LoadBalancer)
+			return []string{string(lb.Spec.ConfigName)}
 		})
 }
 
@@ -384,5 +407,37 @@ func (r *ServiceReconciler) mapNodeToServices(object client.Object) []reconcile.
 	}
 
 	return requests
+}
 
+func (r *ServiceReconciler) mapLoadBalancerConfigToServices(object client.Object) []reconcile.Request {
+	lbConfig := object.(*lbv1alpha1.LoadBalancerConfig)
+
+	ctx := context.Background()
+	logger := log.FromContext(ctx)
+
+	lbList := &lbv1alpha1.LoadBalancerList{}
+
+	err := r.List(context.Background(), lbList, client.MatchingFields{loadBalancerConfigNameIndexField: string(lbConfig.Name)})
+	if err != nil {
+		logger.Error(err, "could not list load balancers", "lbConfigName", lbConfig.Name)
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(lbList.Items))
+
+	for _, lb := range lbList.Items {
+		ownerReferences := lb.GetOwnerReferences()
+		for _, ownerReference := range ownerReferences {
+			if ownerReference.Kind == "Service" {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: lb.Namespace,
+						Name:      ownerReference.Name,
+					},
+				})
+			}
+		}
+	}
+
+	return requests
 }

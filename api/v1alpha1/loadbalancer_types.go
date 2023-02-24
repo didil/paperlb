@@ -25,6 +25,9 @@ import (
 
 // LoadBalancerSpec defines the desired state of LoadBalancer
 type LoadBalancerSpec struct {
+	// ConfigName is the loadbalancer config name
+	// +kubebuilder:validation:Required
+	ConfigName string `json:"configName,omitempty"`
 	// HTTPUpdater is the http updater
 	// +kubebuilder:validation:Required
 	HTTPUpdater HTTPUpdater `json:"httpUpdater,omitempty"`

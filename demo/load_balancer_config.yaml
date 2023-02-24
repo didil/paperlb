@@ -1,0 +1,13 @@
+apiVersion: lb.paperlb.com/v1alpha1
+kind: LoadBalancerConfig
+meta:
+  name: default-lb-config
+  namespace: paperlb-system
+spec:
+  default: true
+  httpUpdaterUrl: "http://192.168.64.1:3000/api/v1/lb"
+  host: "192.168.64.1"
+  portRange: 
+    low: "8000"
+    high: "8100"
+    

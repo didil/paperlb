@@ -20,22 +20,38 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // LoadBalancerConfigSpec defines the desired state of LoadBalancerConfig
 type LoadBalancerConfigSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Default defines if this config is the default config
+	// +kubebuilder:validation:Required
+	Default bool `json:"default,omitempty"`
+	// HTTPUpdaterURL is the http updater url
+	// +kubebuilder:validation:Required
+	HTTPUpdaterURL string `json:"httpUpdaterURL,omitempty"`
+	// Host is the load balancer host
+	// +kubebuilder:validation:Required
+	Host string `json:"host,omitempty"`
+	// PortRange is the load balancer port range
+	// +kubebuilder:validation:Required
+	PortRange PortRange `json:"portRange,omitempty"`
+}
 
-	// Foo is an example field of LoadBalancerConfig. Edit loadbalancerconfig_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+// PortRange defines the load balancer port range
+type PortRange struct {
+	// Low is the lower limit of the port range
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	Low int `json:"low,omitempty"`
+	// High is the higher limit of the port range
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Maximum=65535
+	High int `json:"high,omitempty"`
 }
 
 // LoadBalancerConfigStatus defines the observed state of LoadBalancerConfig
 type LoadBalancerConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 }
 
 //+kubebuilder:object:root=true
