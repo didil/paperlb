@@ -1,0 +1,12 @@
+apiVersion: lb.paperlb.com/v1alpha1
+kind: LoadBalancerConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: loadbalancerconfig
+    app.kubernetes.io/instance: loadbalancerconfig-sample
+    app.kubernetes.io/part-of: paperlb
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: paperlb
+  name: loadbalancerconfig-sample
+spec:
+  # TODO(user): Add fields here
