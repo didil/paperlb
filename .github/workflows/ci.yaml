@@ -41,9 +41,10 @@ jobs:
     needs: build_app
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3    
-  
+      - uses: actions/checkout@v3
+
       - name: Set up QEMU
+        if: ${{ github.ref == 'refs/heads/main' }}
         uses: docker/setup-qemu-action@v2
         with:
           platforms: 'arm64'
@@ -62,12 +63,24 @@ jobs:
         id: set_output_vars
         run: echo "short_sha=$(git rev-parse --short ${{ github.sha }})" >> $GITHUB_OUTPUT
 
-      - name: Build / Push 
+      - name: Build
+        if: ${{ github.ref != 'refs/heads/main' }}
         uses: docker/build-push-action@v4
         with:
           context: .
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          push: ${{ github.ref == 'ref/heads/main' }}
-          platforms: linux/amd64,linux/arm64          
+          push: false
+          platforms: linux/amd64
+          tags: ${{ vars.DOCKER_IMAGE_NAME }}:${{ steps.set_output_vars.outputs.short_sha }}
+
+      - name: Build / Push
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ vars.DOCKER_IMAGE_NAME }}:${{ steps.set_output_vars.outputs.short_sha }}
