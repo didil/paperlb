@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/didil/paperlb
-  newTag: b470f51
+  newTag: 6202a2c

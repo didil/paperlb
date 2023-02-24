@@ -520,7 +520,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: quay.io/didil/paperlb:b470f51
+        image: quay.io/didil/paperlb:6202a2c
         livenessProbe:
           httpGet:
             path: /healthz
