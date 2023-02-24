@@ -4,6 +4,9 @@ metadata:
   labels:
     app: k8s-pod-info-api
   name: k8s-pod-info-api-service
+  #optional annotation to use a config different than the default config
+  #annotations:
+  #  lb.paperlb.com/config-name: "my-special-config"
 spec:
   ports:
   - port: 5000
