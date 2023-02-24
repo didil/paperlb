@@ -20,9 +20,8 @@ jobs:
       run: GOFLAGS=-v make test
 
 
-  publish_container_image:
+  build_container_image:
     needs: build_app
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3    
@@ -46,9 +45,12 @@ jobs:
         id: set_output_vars
         run: echo "short_sha=$(git rev-parse --short ${{ github.sha }})" >> $GITHUB_OUTPUT
 
-      - name: Build and push
+      - name: Build / Push 
         uses: docker/build-push-action@v4
         with:
-          push: true
+          context: .
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: ${{ github.ref == 'ref/heads/main' }}
           platforms: linux/amd64,linux/arm64          
           tags: ${{ vars.DOCKER_IMAGE_NAME }}:${{ steps.set_output_vars.outputs.short_sha }}
